@@ -337,6 +337,7 @@ impl<T: Hasher> MerkleTree<T> {
             self.history.push(diff.clone());
             self.current_working_tree.merge_unverified(diff);
             self.uncommitted_leaves.clear();
+            self.shadow_indices.clear();
         }
     }
 
