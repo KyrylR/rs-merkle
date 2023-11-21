@@ -14,6 +14,8 @@ pub struct MerkleTree<T: Hasher> {
     current_working_tree: PartialTree<T>,
     history: Vec<PartialTree<T>>,
     uncommitted_leaves: Vec<T::Hash>,
+    leaves_count: u64,
+    shadow_indices: Vec<usize>,
 }
 
 impl<T: Hasher> Default for MerkleTree<T> {
@@ -39,6 +41,8 @@ impl<T: Hasher> MerkleTree<T> {
             current_working_tree: PartialTree::new(),
             history: Vec::new(),
             uncommitted_leaves: Vec::new(),
+            leaves_count: 0,
+            shadow_indices: Vec::new(),
         }
     }
 
@@ -64,6 +68,10 @@ impl<T: Hasher> MerkleTree<T> {
         tree.append(leaves.to_vec().as_mut());
         tree.commit();
         tree
+    }
+
+    pub fn set_leaves_count(&mut self, leaves_count: u64) {
+        self.leaves_count = leaves_count;
     }
 
     /// Returns the tree root - the top hash of the tree. Used in the inclusion proof verification.
@@ -247,6 +255,14 @@ impl<T: Hasher> MerkleTree<T> {
         self
     }
 
+    pub fn insert_with_index(&mut self, leaf: T::Hash) -> &mut Self {
+        self.uncommitted_leaves.push(leaf);
+        self.shadow_indices.push(self.leaves_count as usize);
+        self.leaves_count += 1;
+        self.custom_commit();
+        self
+    }
+
     /// Appends leaves to the tree. Behaves similarly to [`MerkleTree::insert`], but for a list of
     /// items. Takes ownership of the elements of the [`std::vec::Vec<T>`],
     /// similarly to [`std::vec::Vec::append`].
@@ -310,6 +326,14 @@ impl<T: Hasher> MerkleTree<T> {
     /// ```
     pub fn commit(&mut self) {
         if let Some(diff) = self.uncommitted_diff() {
+            self.history.push(diff.clone());
+            self.current_working_tree.merge_unverified(diff);
+            self.uncommitted_leaves.clear();
+        }
+    }
+
+    pub fn custom_commit(&mut self) {
+        if let Some(diff) = self.custom_uncommitted_diff() {
             self.history.push(diff.clone());
             self.current_working_tree.merge_unverified(diff);
             self.uncommitted_leaves.clear();
@@ -561,6 +585,37 @@ impl<T: Hasher> MerkleTree<T> {
             Some(first_layer) => {
                 first_layer.append(&mut shadow_node_tuples);
                 first_layer.sort_by(|(a, _), (b, _)| a.cmp(b));
+            }
+            None => partial_tree_tuples.push(shadow_node_tuples),
+        }
+
+        // Building a partial tree with the changes that would be needed to the working tree
+        PartialTree::<T>::build(partial_tree_tuples, uncommitted_tree_depth).ok()
+    }
+
+    fn custom_uncommitted_diff(&self) -> Option<PartialTree<T>> {
+        if self.uncommitted_leaves.is_empty() {
+            return None;
+        }
+
+        assert_eq!(self.uncommitted_leaves.len(), self.shadow_indices.len());
+
+        // Tuples (index, hash) needed to construct a partial tree, since partial tree can't
+        // maintain indices otherwise
+        let mut shadow_node_tuples: Vec<(usize, T::Hash)> = self.shadow_indices
+            .iter()
+            .cloned()
+            .zip(self.uncommitted_leaves.iter().cloned())
+            .collect();
+        let mut partial_tree_tuples = self.helper_node_tuples(&self.shadow_indices);
+
+        // Figuring what tree height would be if we've committed the changes
+        let leaves_in_new_tree = self.leaves_len() + self.uncommitted_leaves.len();
+        let uncommitted_tree_depth = utils::indices::tree_depth(leaves_in_new_tree);
+
+        match partial_tree_tuples.first_mut() {
+            Some(first_layer) => {
+                first_layer.append(&mut shadow_node_tuples);
             }
             None => partial_tree_tuples.push(shadow_node_tuples),
         }
