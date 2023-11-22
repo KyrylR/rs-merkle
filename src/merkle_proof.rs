@@ -6,6 +6,7 @@ use crate::{
     utils, Hasher,
 };
 use core::convert::TryFrom;
+use std::usize;
 
 /// [`MerkleProof`] is used to parse, verify, calculate a root for Merkle proofs.
 ///
@@ -48,11 +49,25 @@ use core::convert::TryFrom;
 /// [`algorithms::Sha256`]: crate::algorithms::Sha256
 pub struct MerkleProof<T: Hasher> {
     proof_hashes: Vec<T::Hash>,
+    proof_indices: Vec<usize>,
 }
 
 impl<T: Hasher> MerkleProof<T> {
     pub fn new(proof_hashes: Vec<T::Hash>) -> Self {
-        MerkleProof { proof_hashes }
+        MerkleProof {
+            proof_hashes,
+            proof_indices: vec![],
+        }
+    }
+
+    pub fn from_tuple(proof_hashes: Vec<(usize, T::Hash)>) -> Self {
+        let (proof_indices, proof_hashes): (Vec<usize>, Vec<T::Hash>) =
+            proof_hashes.into_iter().unzip();
+
+        MerkleProof {
+            proof_hashes,
+            proof_indices,
+        }
     }
 
     /// Creates a proof from a slice of bytes, direct hashes order. If you're looking for
@@ -324,6 +339,10 @@ impl<T: Hasher> MerkleProof<T> {
     /// ```
     pub fn proof_hashes(&self) -> &[T::Hash] {
         &self.proof_hashes
+    }
+
+    pub fn proof_indices(&self) -> &[usize] {
+        &self.proof_indices
     }
 
     /// Returns all hashes from the proof, sorted from the left to right,

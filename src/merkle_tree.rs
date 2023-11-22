@@ -1,5 +1,6 @@
 use crate::prelude::*;
 use crate::{partial_tree::PartialTree, utils, utils::indices, Hasher, MerkleProof};
+use std::usize;
 
 /// [`MerkleTree`] is a Merkle Tree that is well suited for both basic and advanced usage.
 ///
@@ -148,6 +149,18 @@ impl<T: Hasher> MerkleTree<T> {
         helper_nodes
     }
 
+    fn helper_nodes_custom(&self, leaf_indices: &[usize]) -> Vec<(usize, T::Hash)> {
+        let mut helper_nodes = Vec::<(usize, T::Hash)>::new();
+
+        for layer in self.helper_node_tuples(leaf_indices) {
+            for tuple in layer {
+                helper_nodes.push(tuple)
+            }
+        }
+
+        helper_nodes
+    }
+
     /// Gets all helper nodes required to build a partial merkle tree for the given indices,
     /// cloning all required hashes into the resulting vector.
     fn helper_node_tuples(&self, leaf_indices: &[usize]) -> Vec<Vec<(usize, T::Hash)>> {
@@ -203,6 +216,10 @@ impl<T: Hasher> MerkleTree<T> {
     /// ```
     pub fn proof(&self, leaf_indices: &[usize]) -> MerkleProof<T> {
         MerkleProof::<T>::new(self.helper_nodes(leaf_indices))
+    }
+
+    pub fn proof_custom(&self, leaf_indices: &[usize]) -> MerkleProof<T> {
+        MerkleProof::<T>::from_tuple(self.helper_nodes_custom(leaf_indices))
     }
 
     /// Inserts a new leaf. Please note it won't modify the root just yet; For the changes
@@ -603,7 +620,8 @@ impl<T: Hasher> MerkleTree<T> {
 
         // Tuples (index, hash) needed to construct a partial tree, since partial tree can't
         // maintain indices otherwise
-        let mut shadow_node_tuples: Vec<(usize, T::Hash)> = self.shadow_indices
+        let mut shadow_node_tuples: Vec<(usize, T::Hash)> = self
+            .shadow_indices
             .iter()
             .cloned()
             .zip(self.uncommitted_leaves.iter().cloned())
